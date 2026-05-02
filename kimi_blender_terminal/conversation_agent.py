@@ -19,6 +19,7 @@ import traceback
 from . import artist_guide
 from . import executor
 from . import kimi_client
+from . import knowledge_base
 from . import mcp_bridge
 from . import scene_context
 from . import tool_registry
@@ -203,6 +204,16 @@ class ConversationAgent:
 
         # Add executor helper docs (condensed)
         parts.append("\n" + executor.HELPER_DOCS)
+
+        # Add retrieved knowledge from past sessions
+        kb_entries = knowledge_base.retrieve_context(user_message)
+        if kb_entries:
+            parts.append(knowledge_base.format_context(kb_entries))
+
+        # Add user preference profile
+        profile = knowledge_base.format_profile()
+        if profile:
+            parts.append(profile)
 
         # Add scene context
         try:
@@ -418,6 +429,18 @@ class ConversationAgent:
             error = str(e)
             set_status("ERROR")
             log(f"[Agent] Exception: {e}")
+
+        # Learn from this interaction
+        if not error and turn > 0:
+            try:
+                code_sample = "\n".join(code_blocks_log)[:1500] if code_blocks_log else ""
+                knowledge_base.store_entry(
+                    prompt=user_message,
+                    code=code_sample,
+                    outcome="success",
+                )
+            except Exception:
+                pass
 
         if on_done:
             on_done({

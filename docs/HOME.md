@@ -84,7 +84,7 @@ Blender Main Thread (executes code, captures screenshots)
 - [x] Real-time reasoning display
 - [x] Code block display with Run/Copy
 - [x] Viewport screenshot thumbnails
-- [x] Quick prompt buttons
+- [x] File attachment for prompts
 - [x] Multi-turn autonomous execution
 - [x] MCP Bridge socket server
 - [x] Terrain generation (noise + erosion)

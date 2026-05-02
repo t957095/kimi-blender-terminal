@@ -30,6 +30,7 @@ def register():
     from . import web_exporter
     from . import data_viz
     from . import session_manager
+    from . import knowledge_base
     from . import mcp_bridge
 
     global modules

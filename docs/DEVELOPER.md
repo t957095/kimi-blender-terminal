@@ -3,20 +3,22 @@
 ## Project Structure
 
 ```
-kimi_blender_terminal/
-├── __init__.py              # Addon entry point, bl_info, register/unregister
-├── preferences.py           # Addon preferences panel
-├── ui.py                    # Main panel, operators, message drawing
-├── conversation_agent.py    # Orchestrates think→code→execute→observe loop
-├── kimi_client.py           # Subprocess wrapper for Kimi CLI
-├── executor.py              # Safe Python execution in Blender with helpers
-├── mcp_bridge.py            # Socket server + command handlers + client
-├── scene_context.py         # Scene summary builder for LLM context
-├── session_manager.py       # Persistent JSON session storage
-├── integrations.py          # Poly Haven, Sketchfab, Hyper3D, Hunyuan3D
-├── blender_tools.py         # Core tool registry
-├── tool_registry.py         # Tool registration utilities
-└── utils.py                 # run_in_main_thread, logging helpers
+kimi-blender-terminal/
+├── __init__.py              # Root shim — makes GitHub source ZIP installable
+├── kimi_blender_terminal/   # Real addon package
+│   ├── __init__.py          # Addon entry point, bl_info, register/unregister
+│   ├── preferences.py       # Addon preferences panel
+│   ├── ui.py                # Main panel, operators, message drawing
+│   ├── conversation_agent.py # Orchestrates think→code→execute→observe loop
+│   ├── kimi_client.py       # Subprocess wrapper for Kimi CLI
+│   ├── executor.py          # Safe Python execution in Blender with helpers
+│   ├── mcp_bridge.py        # Socket server + command handlers + client
+│   ├── scene_context.py     # Scene summary builder for LLM context
+│   ├── session_manager.py   # Persistent JSON session storage
+│   ├── integrations.py      # Poly Haven, Sketchfab, Hyper3D, Hunyuan3D
+│   ├── blender_tools.py     # Core tool registry
+│   ├── tool_registry.py     # Tool registration utilities
+│   └── utils.py             # run_in_main_thread, logging helpers
 ```
 
 ---

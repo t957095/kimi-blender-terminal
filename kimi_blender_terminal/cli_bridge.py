@@ -307,13 +307,7 @@ def run_cli(prompt: str, host: str = "localhost", port: int = 9742,
             print(f"[Tool] {name}({json.dumps(args)[:100]}...)")
             try:
                 # Tool execution happens inside Blender via the bridge
-                code = (
-                    "from kimi_blender_terminal.tool_registry import execute_tool\n"
-                    "import json\n"
-                    f"result = execute_tool({json.dumps(name)}, {json.dumps(args)})\n"
-                    "print(json.dumps(result))\n"
-                )
-                result = bridge.send("execute_code", {"code": code})
+                result = bridge.send("execute_tool", {"name": name, "arguments": args})
                 out = result.get("result", {}).get("stdout", "")
                 err_out = result.get("result", {}).get("stderr", "")
                 status = result.get("result", {}).get("status", "unknown")

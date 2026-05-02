@@ -4,26 +4,28 @@
 
 It connects Blender to a local CLI-based AI backend, such as Kimi CLI, and allows the model to execute Blender Python, inspect viewport screenshots, iterate across multiple turns, and persist sessions across projects.
 
----
-
 ## Why This Exists
 
-Official Blender MCP-style integrations prove that AI-assisted 3D workflows are powerful, but many existing solutions are tied to specific vendors, token-based pricing models, and desktop-only workflows.
+Official Blender MCP-style integrations like **Claude's** prove that AI-assisted 3D workflows are powerful. But many existing solutions are tied to specific companies that charge exorbitant amounts and heavily limit your workflow.
 
-Kimi Blender Terminal is built as an open alternative.
+We've all encountered it. Depending on how deep your pockets are, you might not even feel the burn — but some of us felt it harder than others. As someone who uses Blender in my daily workload, I got tired of watching per-token meters tick up every time I asked the model to fix a material, tweak lighting, or regenerate a terrain. A single complex scene can easily burn through hundreds of thousands of tokens across dozens of iterative corrections. At API rates, that adds up fast.
 
-It is designed for artists, developers, technical directors, and automation-heavy Blender users who want:
+So I built this.
 
-- Local-first control
-- Long autonomous sessions
-- Persistent project memory
-- Screenshot-based feedback loops
-- Terminal, script, and CI access
-- Flexible backend support through CLI-compatible models
+**Kimi Blender Terminal** is an open-source MCP connector that plugs into **Kimi CLI** (and other CLI-compatible backends). You get an equally intelligent — and in many benchmarks, more capable — model driving your Blender scenes, at roughly **10× less cost** than running Claude for the same workload. No subscription walls. No token anxiety. No vendor deciding when your session ends.
 
-Instead of requiring every scene query, correction, and iteration to run through a paid API workflow, this project allows Blender to be driven through a local CLI backend while preserving a production-ready multi-turn assistant experience.
+This is for artists, developers, technical directors, and anyone who wants:
 
----
+- **Local-first control** — your data stays on your machine
+- **Long autonomous sessions** — let the model iterate 10, 20, 50 turns without meter anxiety
+- **Persistent project memory** — resume tomorrow where you left off
+- **Screenshot-based feedback loops** — the model sees what it made and self-corrects
+- **Terminal, script, and CI access** — drive Blender from bash, PowerShell, or a render farm
+- **Backend freedom** — swap models, use local LLMs, or stick with Kimi
+
+**Why long sessions matter:** When you give a model one massive prompt and ask it to generate 500 lines of code in a single shot, it starts hallucinating by the 5th major decision. It forgets constraints, breaks its own logic, and introduces regressions. You have seen this — the model goes quiet for 30 minutes, has what looks like an existential crisis in its thinking block, then returns garbage or deletes half the scene. That is what you are paying $200 a month for.
+
+This connector does the opposite. It works in small, tight iteration windows. The model makes one change, sees the result, corrects, and moves forward. It is the difference between asking someone to design and build an entire house from memory versus letting them place one wall, check the measurement, place the next wall. The second approach is slower per turn but actually finishes with something that works. No hallucinations. No regressions. No existential crises.
 
 ## Key Features
 
@@ -43,8 +45,6 @@ The assistant can:
 
 This makes it useful for complex workflows such as terrain generation, lighting setup, material refinement, asset placement, and scene cleanup.
 
----
-
 ### Viewport Screenshot Feedback
 
 After each execution round, the assistant can receive a viewport screenshot as visual feedback.
@@ -60,8 +60,6 @@ This allows the model to detect and correct issues such as:
 - Camera framing problems
 
 The assistant does not have to rely only on scene metadata. It can see the result of its actions and continue improving the scene.
-
----
 
 ### Blender MCP Bridge
 
@@ -182,11 +180,9 @@ Blender's bundled Python is supported for all core workflows. Asset integrations
 
 ## Installation
 
-### Option A: ZIP Install
+### Option A: Download ZIP (Green Code Button)
 
-> **Do not download the repository source ZIP** (the green Code button). That ZIP contains the repo root folder and will not install correctly in Blender. Use the pre-built `kimi_blender_terminal.zip` from the releases page, or build it yourself from source.
-
-1. Download `kimi_blender_terminal.zip` from the [Releases](../../releases) page.
+1. Click the green **Code** button on GitHub and select **Download ZIP**.
 2. Open Blender.
 3. Go to **Edit → Preferences → Add-ons → Install from Disk**.
 4. Select the ZIP file.
@@ -197,13 +193,20 @@ Blender's bundled Python is supported for all core workflows. Asset integrations
 localhost:9742
 ```
 
-### Option B: Clone from GitHub
+> The repo includes a root `__init__.py` shim that makes GitHub's source ZIP install correctly in Blender.
+
+### Option B: Pre-built Release ZIP
+
+1. Download `kimi_blender_terminal.zip` from the [Releases](../../releases) page.
+2. Install in Blender as described in Option A.
+
+### Option C: Clone from GitHub
 
 ```bash
 git clone https://github.com/t957095/kimi-blender-terminal.git
 ```
 
-Then zip the `kimi_blender_terminal` folder and install it through Blender's add-on installer.
+Then zip the `kimi_blender_terminal` subfolder and install it through Blender's add-on installer.
 
 ## Configuration
 
@@ -363,7 +366,7 @@ Because the model receives viewport feedback after each round, it can self-corre
 │ ├─ Live working area                                          │
 │ ├─ Code and execution output                                  │
 │ ├─ Viewport screenshot thumbnails                             │
-│ └─ Input bar and quick prompts                                │
+│ └─ Input bar and file attachment                              │
 ├─────────────────────────────────────────────────────────────┤
 │ Conversation Engine                                           │
 │ ├─ System prompt and tool schemas                             │
@@ -558,6 +561,17 @@ Potential future improvements include:
 - More structured MCP tool schemas
 - Automated test scenes
 - Plugin marketplace support
+
+## Model Comparison
+
+| | Kimi (k1.5) | Claude (3.5/3.7) | DeepSeek (V3/R1) | Gemini (2.5) | Codex |
+|---|---|---|---|---|---|
+| Best For | Long sessions, production | Precise, conservative | Offline, reasoning | Exploration, big scenes | IDE coding |
+| Autonomous Iteration | Excellent, 20+ turns | Good, stops early | Good, verbose | Moderate, drifts | Poor |
+| Terminal / CI | Native CLI | Desktop only | Third-party | API wrappers | IDE only |
+| Offline | No | No | Yes | No | No |
+
+Claude Native App vs This MCP: Claude locks you to Opus 4.7, desktop-only, hard token caps, and a subscription. This MCP works with any model, runs headless, has no session limits, and costs ~10x less.
 
 ## License
 

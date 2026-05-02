@@ -124,6 +124,12 @@ class KIMI_TERMINAL_OT_Send(Operator):
             self.report({"WARNING"}, "Already running. Wait or press Stop.")
             return {"CANCELLED"}
 
+        # Prepend attached file reference if present
+        attached = scene.kimi_terminal_attached_file.strip()
+        if attached and os.path.isfile(attached):
+            text = f"[Attached file: {attached}]\n{text}"
+            scene.kimi_terminal_attached_file = ""
+
         # Add user message
         item = scene.kimi_terminal_history.add()
         item.role = "user"
@@ -253,17 +259,65 @@ class KIMI_TERMINAL_OT_Send(Operator):
         return {"FINISHED"}
 
 
-class KIMI_TERMINAL_OT_SendQuickPrompt(Operator):
-    bl_idname = "kimi_terminal.send_quick_prompt"
-    bl_label = "Quick Prompt"
-    bl_description = "Send a preset prompt"
+class KIMI_TERMINAL_OT_SelectFile(Operator):
+    bl_idname = "kimi_terminal.select_file"
+    bl_label = "Attach File"
+    bl_description = "Select an image or file to include with the prompt"
     bl_options = {"REGISTER"}
 
-    prompt: StringProperty()
+    filepath: StringProperty(subtype="FILE_PATH")
 
     def execute(self, context):
-        context.scene.kimi_terminal_input = self.prompt
-        return bpy.ops.kimi_terminal.send()
+        context.scene.kimi_terminal_attached_file = self.filepath
+        return {"FINISHED"}
+
+    def invoke(self, context, event):
+        context.window_manager.fileselect_add(self)
+        return {"RUNNING_MODAL"}
+
+
+class KIMI_TERMINAL_OT_ClearFile(Operator):
+    bl_idname = "kimi_terminal.clear_file"
+    bl_label = "Clear"
+    bl_description = "Remove attached file"
+    bl_options = {"REGISTER"}
+
+    def execute(self, context):
+        context.scene.kimi_terminal_attached_file = ""
+        return {"FINISHED"}
+
+
+class KIMI_TERMINAL_OT_ClearKB(Operator):
+    bl_idname = "kimi_terminal.clear_kb"
+    bl_label = "Clear Knowledge Base"
+    bl_description = "Delete all learned patterns and preferences"
+    bl_options = {"REGISTER"}
+
+    def execute(self, context):
+        from . import knowledge_base as kb
+        kb.clear_knowledge_base()
+        self.report({"INFO"}, "Knowledge base cleared.")
+        return {"FINISHED"}
+
+
+class KIMI_TERMINAL_OT_SavePreference(Operator):
+    bl_idname = "kimi_terminal.save_preference"
+    bl_label = "Save Preference"
+    bl_description = "Store a user preference for future sessions"
+    bl_options = {"REGISTER"}
+
+    key: StringProperty(name="Key", default="style")
+    value: StringProperty(name="Value", default="")
+
+    def execute(self, context):
+        from . import knowledge_base as kb
+        if self.value:
+            kb.update_user_profile(self.key, self.value)
+            self.report({"INFO"}, f"Saved: {self.key} = {self.value}")
+        return {"FINISHED"}
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self, width=300)
 
 
 class KIMI_TERMINAL_OT_Stop(Operator):
@@ -536,34 +590,24 @@ class KIMI_TERMINAL_PT_Panel(Panel):
         status = scene.kimi_terminal_status
 
         # ═══════════════════════════════════════════════════════════════
-        # 1. STATUS BAR — minimal, animated
+        # 1. STATUS BAR — minimal, neutral
         # ═══════════════════════════════════════════════════════════════
         status_cfg = {
-            "IDLE":        ("●  Ready",       "CHECKMARK"),
-            "CONNECTED":   ("●  Connected",   "CHECKMARK"),
-            "TESTING":     ("○  Testing...",  "QUESTION"),
-            "THINKING":    ("◐  Thinking...", "TEMP"),
-            "EXECUTING":   ("◑  Working...",  "PLAY"),
-            "DONE":        ("●  Done",        "CHECKMARK"),
-            "ERROR":       ("●  Error",       "ERROR"),
-            "ABORTED":     ("●  Stopped",     "CANCEL"),
+            "IDLE":        ("Ready",       "CHECKMARK"),
+            "CONNECTED":   ("Connected",   "CHECKMARK"),
+            "TESTING":     ("Testing...",  "QUESTION"),
+            "THINKING":    ("Thinking...", "TEMP"),
+            "EXECUTING":   ("Working...",  "PLAY"),
+            "DONE":        ("Done",        "CHECKMARK"),
+            "ERROR":       ("Error",       "ERROR"),
+            "ABORTED":     ("Stopped",     "CANCEL"),
         }
-        # Color mapping: red only for ERROR
-        color_cfg = {
-            "IDLE":        (0.4, 0.8, 0.4),   # green
-            "CONNECTED":   (0.3, 0.7, 1.0),   # blue
-            "TESTING":     (1.0, 0.8, 0.2),   # yellow
-            "THINKING":    (1.0, 0.6, 0.2),   # orange
-            "EXECUTING":   (0.4, 0.8, 0.4),   # green
-            "DONE":        (0.4, 0.8, 0.4),   # green
-            "ERROR":       (1.0, 0.3, 0.3),   # red (only for errors)
-            "ABORTED":     (0.7, 0.7, 0.7),   # grey
-        }
-        label, icon = status_cfg.get(status, (f"●  {status}", "INFO"))
-        color = color_cfg.get(status, (0.7, 0.7, 0.7))
+        label, icon = status_cfg.get(status, (status, "INFO"))
 
         row = layout.row(align=True)
-        row.scale_y = 0.9
+        row.scale_y = 0.85
+        if status == "ERROR":
+            row.alert = True
         row.label(text=label, icon=icon)
         row.separator()
         if status in {"THINKING", "EXECUTING"}:
@@ -571,127 +615,10 @@ class KIMI_TERMINAL_PT_Panel(Panel):
         row.operator("kimi_terminal.test_connection", text="", icon="PLUGIN", emboss=False)
 
         # ═══════════════════════════════════════════════════════════════
-        # 2. QUICK PROMPTS — one-click common tasks
-        # ═══════════════════════════════════════════════════════════════
-        if status == "IDLE" and len(scene.kimi_terminal_history) == 0:
-            box = layout.box()
-            box.scale_y = 0.85
-            box.label(text="Quick Start", icon="PRESET")
-            col = box.column(align=True)
-            row = col.row(align=True)
-            op = row.operator("kimi_terminal.send_quick_prompt", text="Red Cube", icon="MESH_CUBE")
-            op.prompt = "Create a shiny red cube and set up a 3-point lighting rig"
-            op = row.operator("kimi_terminal.send_quick_prompt", text="Mountain", icon="IMAGE_DATA")
-            op.prompt = "Create a snowy mountain landscape with PBR materials and HDRI lighting"
-            row = col.row(align=True)
-            op = row.operator("kimi_terminal.send_quick_prompt", text="Studio", icon="LIGHT")
-            op.prompt = "Set up a clean white studio with soft box lighting and a camera"
-            op = row.operator("kimi_terminal.send_quick_prompt", text="Island", icon="WORLD")
-            op.prompt = "Create a tropical island with ocean, palm trees, and a sunset sky"
-
-        # ═══════════════════════════════════════════════════════════════
-        # 3. COLLAPSIBLE SETTINGS
-        # ═══════════════════════════════════════════════════════════════
-        box = layout.box()
-        row = box.row()
-        row.prop(scene, "kimi_terminal_show_settings",
-                 text="Settings", icon="PREFERENCES", emboss=False, toggle=True)
-
-        if scene.kimi_terminal_show_settings:
-            # Sessions
-            sub = box.column(align=True)
-            sub.separator(factor=0.5)
-            row = sub.row(align=True)
-            row.operator("kimi_terminal.new_session", text="New", icon="FILE_NEW")
-            row.operator("kimi_terminal.save_session", text="Save", icon="FILE_TICK")
-
-            if scene.kimi_terminal_sessions:
-                for s in scene.kimi_terminal_sessions:
-                    row = sub.row(align=True)
-                    row.label(text=f"  {s.name}", icon="DOT")
-                    op = row.operator("kimi_terminal.load_session", text="Load", icon="IMPORT")
-                    op.session_uuid = s.uuid
-                    op = row.operator("kimi_terminal.delete_session", text="", icon="X")
-                    op.session_uuid = s.uuid
-            else:
-                sub.label(text="  No saved sessions", icon="INFO")
-
-            # Scene Context
-            sub.separator(factor=0.5)
-            row = sub.row(align=True)
-            row.prop(scene, "kimi_terminal_show_scene",
-                     text="Scene Context", icon="SCENE_DATA", emboss=False, toggle=True)
-            if scene.kimi_terminal_show_scene:
-                col = sub.column(align=True)
-                for line in scene.kimi_terminal_scene_summary.split("\n"):
-                    if line.strip():
-                        col.label(text=f"  {line[:55]}")
-                row2 = sub.row(align=True)
-                row2.operator("kimi_terminal.refresh_scene", text="Refresh", icon="FILE_REFRESH")
-
-            # MCP Bridge & Autonomous Mode
-            sub.separator(factor=0.5)
-            sub.label(text="Execution Engine", icon="MODIFIER")
-            row = sub.row(align=True)
-            row.prop(scene, "kimi_terminal_use_mcp_bridge", text="MCP Bridge", toggle=True)
-            row.prop(scene, "kimi_terminal_use_screenshots", text="Screenshots", toggle=True)
-            sub.prop(scene, "kimi_terminal_max_autonomous_turns", text="Max Turns")
-            sub.label(text="Higher turns = longer tasks, more tokens.", icon="INFO")
-
-        # ═══════════════════════════════════════════════════════════════
-        # 4. LIVE WORKING AREA — real-time execution display
-        # ═══════════════════════════════════════════════════════════════
-        if status in {"THINKING", "EXECUTING"}:
-            box = layout.box()
-            box.alert = True
-            row = box.row()
-            row.label(text=f"Working...  (turn {scene.kimi_terminal_current_turn + 1}/{scene.kimi_terminal_total_turns})", icon="TEMP")
-
-            # Progress bar visualization
-            progress = 0.0
-            if scene.kimi_terminal_total_turns > 0:
-                progress = (scene.kimi_terminal_current_turn + 1) / scene.kimi_terminal_total_turns
-            row = box.row()
-            row.prop(scene, "kimi_terminal_progress_dummy", text="", slider=True)
-
-            # Thinking
-            if scene.kimi_terminal_live_thinking:
-                sub = box.column(align=True)
-                sub.active = False
-                for line in scene.kimi_terminal_live_thinking.split("\n")[:4]:
-                    if line.strip():
-                        sub.label(text=f"  {line[:60]}")
-
-            # Generated code preview
-            if scene.kimi_terminal_live_code:
-                sub = box.column(align=True)
-                sub.separator(factor=0.3)
-                sub.label(text="Generated code:", icon="SCRIPT")
-                code_lines = scene.kimi_terminal_live_code.split("\n")[:6]
-                for line in code_lines:
-                    row = sub.row()
-                    row.scale_y = 0.75
-                    row.label(text=f"  {line[:58]}")
-                if len(scene.kimi_terminal_live_code.split("\n")) > 6:
-                    sub.label(text="  ...", icon="DOT")
-
-            # Execution output
-            if scene.kimi_terminal_live_output:
-                sub = box.column(align=True)
-                sub.separator(factor=0.3)
-                sub.label(text="Output:", icon="CONSOLE")
-                for line in scene.kimi_terminal_live_output.split("\n")[-4:]:
-                    if line.strip():
-                        row = sub.row()
-                        row.scale_y = 0.75
-                        row.label(text=f"  {line[:58]}")
-
-        # ═══════════════════════════════════════════════════════════════
-        # 5. CHAT HISTORY — message cards
+        # 2. CHAT HISTORY — message cards
         # ═══════════════════════════════════════════════════════════════
         history = scene.kimi_terminal_history
         start = max(0, len(history) - scene.kimi_terminal_max_visible_messages)
-
         expanded = set(scene.kimi_terminal_expanded_thinking.split(",")) if scene.kimi_terminal_expanded_thinking else set()
 
         for i in range(start, len(history)):
@@ -699,7 +626,6 @@ class KIMI_TERMINAL_PT_Panel(Panel):
             idx = str(i)
 
             if msg.role == "user":
-                # User prompt — distinct card
                 box = layout.box()
                 row = box.row()
                 row.alignment = "RIGHT"
@@ -711,10 +637,9 @@ class KIMI_TERMINAL_PT_Panel(Panel):
                     row2.label(text=msg.timestamp)
 
             elif msg.role == "assistant":
-                # Assistant response card
                 box = layout.box()
 
-                # Header with turn badge
+                # Header
                 row = box.row(align=True)
                 row.label(text="Kimi", icon="INFO")
                 if msg.turn_number > 1:
@@ -764,14 +689,12 @@ class KIMI_TERMINAL_PT_Panel(Panel):
                     sub.scale_y = 0.9
                     row = sub.row(align=True)
                     row.label(text="Code", icon="SCRIPT")
-                    # Action buttons
                     row2 = sub.row(align=True)
                     run_op = row2.operator("kimi_terminal.run_code", text="Run", icon="PLAY")
                     run_op.code = msg.code
                     copy_op = row2.operator("kimi_terminal.copy_code", text="Copy", icon="COPYDOWN")
                     copy_op.code = msg.code
 
-                    # Code lines with monospace feel
                     col = sub.column(align=True)
                     for line in msg.code.split("\n")[:10]:
                         row = col.row()
@@ -786,7 +709,7 @@ class KIMI_TERMINAL_PT_Panel(Panel):
                     sub.scale_y = 0.8
                     icon = "CHECKMARK" if msg.status == "success" else "ERROR"
                     row = sub.row()
-                    row.label(text=f"  {'✓' if msg.status == 'success' else '✗'}  Result", icon=icon)
+                    row.label(text=f"  {'OK' if msg.status == 'success' else 'FAIL'}  Result", icon=icon)
                     col = sub.column(align=True)
                     for line in msg.output.split("\n")[:6]:
                         if line.strip():
@@ -795,7 +718,7 @@ class KIMI_TERMINAL_PT_Panel(Panel):
                             row.label(text=f"    {line[:52]}")
 
             elif msg.role == "system":
-                # Error / system message
+                # Error / system message — red alert only here
                 box = layout.box()
                 box.alert = True
                 row = box.row()
@@ -807,17 +730,14 @@ class KIMI_TERMINAL_PT_Panel(Panel):
             col = box.column(align=True)
             col.scale_y = 0.9
             col.label(text="Ask me anything...", icon="INFO")
-            col.label(text="  • \"Create a red cube\"")
-            col.label(text="  • \"Make a snowy mountain\"")
-            col.label(text="  • \"Set up studio lighting\"")
 
         # ═══════════════════════════════════════════════════════════════
-        # 6. INPUT BAR — prominent, fixed at bottom
+        # 3. INPUT BAR
         # ═══════════════════════════════════════════════════════════════
-        layout.separator(factor=0.5)
+        layout.separator(factor=0.3)
         box = layout.box()
         row = box.row(align=True)
-        row.scale_y = 1.4
+        row.scale_y = 1.3
         row.prop(scene, "kimi_terminal_input", text="")
         if status in {"THINKING", "EXECUTING"}:
             row.operator("kimi_terminal.stop", text="", icon="PAUSE")
@@ -825,21 +745,138 @@ class KIMI_TERMINAL_PT_Panel(Panel):
             row.operator("kimi_terminal.send", text="", icon="PLAY")
 
         # ═══════════════════════════════════════════════════════════════
-        # 7. FOOTER — tiny actions
+        # 4. FILE ATTACHMENT
+        # ═══════════════════════════════════════════════════════════════
+        if status == "IDLE":
+            row = layout.row(align=True)
+            row.scale_y = 0.8
+            if scene.kimi_terminal_attached_file:
+                row.label(text=f"Attached: {os.path.basename(scene.kimi_terminal_attached_file)}", icon="FILE_IMAGE")
+                row.operator("kimi_terminal.clear_file", text="", icon="X")
+            else:
+                row.operator("kimi_terminal.select_file", text="Attach Image/File", icon="FILE_IMAGE")
+
+        # ═══════════════════════════════════════════════════════════════
+        # 5. FOOTER — view toggles + MCP status
         # ═══════════════════════════════════════════════════════════════
         row = layout.row(align=True)
         row.scale_y = 0.75
         row.alignment = "CENTER"
-        row.operator("kimi_terminal.clear", text="Clear Chat", icon="TRASH", emboss=False)
+        row.operator("kimi_terminal.clear", text="Clear", icon="TRASH", emboss=False)
         row.prop(scene, "kimi_terminal_show_thinking",
                  text="Think", icon="INFO", emboss=False, toggle=True)
         row.prop(scene, "kimi_terminal_show_code",
                  text="Code", icon="SCRIPT", emboss=False, toggle=True)
-        # MCP Bridge status
         if mcp_bridge.is_running():
             row.label(text="MCP", icon="CHECKMARK")
         else:
             row.label(text="MCP", icon="ERROR")
+
+        # ═══════════════════════════════════════════════════════════════
+        # 6. SETTINGS — independent collapsible panel at bottom
+        # ═══════════════════════════════════════════════════════════════
+        layout.separator(factor=0.5)
+        box = layout.box()
+        box.scale_y = 0.9
+        row = box.row()
+        row.prop(scene, "kimi_terminal_show_settings",
+                 text="Settings", icon="PREFERENCES", emboss=False, toggle=True)
+
+        if scene.kimi_terminal_show_settings:
+            # Sessions
+            sub = box.column(align=True)
+            sub.separator(factor=0.3)
+            row = sub.row(align=True)
+            row.operator("kimi_terminal.new_session", text="New", icon="FILE_NEW")
+            row.operator("kimi_terminal.save_session", text="Save", icon="FILE_TICK")
+
+            if scene.kimi_terminal_sessions:
+                for s in scene.kimi_terminal_sessions:
+                    row = sub.row(align=True)
+                    row.label(text=f"  {s.name}", icon="DOT")
+                    op = row.operator("kimi_terminal.load_session", text="Load", icon="IMPORT")
+                    op.session_uuid = s.uuid
+                    op = row.operator("kimi_terminal.delete_session", text="", icon="X")
+                    op.session_uuid = s.uuid
+            else:
+                sub.label(text="  No saved sessions", icon="INFO")
+
+            # Scene Context
+            sub.separator(factor=0.3)
+            row = sub.row(align=True)
+            row.prop(scene, "kimi_terminal_show_scene",
+                     text="Scene Context", icon="SCENE_DATA", emboss=False, toggle=True)
+            if scene.kimi_terminal_show_scene:
+                col = sub.column(align=True)
+                for line in scene.kimi_terminal_scene_summary.split("\n"):
+                    if line.strip():
+                        col.label(text=f"  {line[:55]}")
+                row2 = sub.row(align=True)
+                row2.operator("kimi_terminal.refresh_scene", text="Refresh", icon="FILE_REFRESH")
+
+            # Execution Engine
+            sub.separator(factor=0.3)
+            sub.label(text="Execution Engine", icon="MODIFIER")
+            row = sub.row(align=True)
+            row.prop(scene, "kimi_terminal_use_mcp_bridge", text="MCP Bridge", toggle=True)
+            row.prop(scene, "kimi_terminal_use_screenshots", text="Screenshots", toggle=True)
+            sub.prop(scene, "kimi_terminal_max_autonomous_turns", text="Max Turns")
+            sub.label(text="Higher turns = longer tasks, more tokens.", icon="INFO")
+
+            # Knowledge Base
+            sub.separator(factor=0.3)
+            sub.label(text="Knowledge Base", icon="BOOKMARKS")
+            from . import knowledge_base as kb
+            stats = kb.get_stats()
+            sub.label(text=f"  Learned: {stats['count']} entries, {stats['patterns']} patterns", icon="DOT")
+            if stats['corrections']:
+                sub.label(text=f"  Corrections applied: {stats['corrections']}", icon="CHECKMARK")
+            row = sub.row(align=True)
+            row.operator("kimi_terminal.clear_kb", text="Clear Memory", icon="TRASH")
+            row.operator("kimi_terminal.save_preference", text="Save Preference", icon="PREFERENCES")
+
+        # ═══════════════════════════════════════════════════════════════
+        # 7. LIVE WORKING AREA — real-time execution display
+        # ═══════════════════════════════════════════════════════════════
+        if status in {"THINKING", "EXECUTING"}:
+            box = layout.box()
+            row = box.row()
+            row.label(text=f"Working...  turn {scene.kimi_terminal_current_turn + 1}/{scene.kimi_terminal_total_turns}", icon="TEMP")
+
+            progress = 0.0
+            if scene.kimi_terminal_total_turns > 0:
+                progress = (scene.kimi_terminal_current_turn + 1) / scene.kimi_terminal_total_turns
+            row = box.row()
+            row.prop(scene, "kimi_terminal_progress_dummy", text="", slider=True)
+
+            if scene.kimi_terminal_live_thinking:
+                sub = box.column(align=True)
+                sub.active = False
+                for line in scene.kimi_terminal_live_thinking.split("\n")[:4]:
+                    if line.strip():
+                        sub.label(text=f"  {line[:60]}")
+
+            if scene.kimi_terminal_live_code:
+                sub = box.column(align=True)
+                sub.separator(factor=0.3)
+                sub.label(text="Generated code:", icon="SCRIPT")
+                code_lines = scene.kimi_terminal_live_code.split("\n")[:6]
+                for line in code_lines:
+                    row = sub.row()
+                    row.scale_y = 0.75
+                    row.label(text=f"  {line[:58]}")
+                if len(scene.kimi_terminal_live_code.split("\n")) > 6:
+                    sub.label(text="  ...", icon="DOT")
+
+            if scene.kimi_terminal_live_output:
+                sub = box.column(align=True)
+                sub.separator(factor=0.3)
+                sub.label(text="Output:", icon="CONSOLE")
+                for line in scene.kimi_terminal_live_output.split("\n")[-4:]:
+                    if line.strip():
+                        row = sub.row()
+                        row.scale_y = 0.75
+                        row.label(text=f"  {line[:58]}")
 
 
 # ── Register ──
@@ -850,7 +887,8 @@ classes = [
     KIMI_TERMINAL_SessionItem,
     KIMI_TERMINAL_OT_TestConnection,
     KIMI_TERMINAL_OT_Send,
-    KIMI_TERMINAL_OT_SendQuickPrompt,
+    KIMI_TERMINAL_OT_SelectFile,
+    KIMI_TERMINAL_OT_ClearFile,
     KIMI_TERMINAL_OT_Stop,
     KIMI_TERMINAL_OT_Clear,
     KIMI_TERMINAL_OT_RefreshScene,
@@ -861,6 +899,8 @@ classes = [
     KIMI_TERMINAL_OT_SaveSession,
     KIMI_TERMINAL_OT_LoadSession,
     KIMI_TERMINAL_OT_DeleteSession,
+    KIMI_TERMINAL_OT_ClearKB,
+    KIMI_TERMINAL_OT_SavePreference,
     KIMI_TERMINAL_PT_Panel,
 ]
 
@@ -894,8 +934,12 @@ def register():
     bpy.types.Scene.kimi_terminal_total_turns = IntProperty(default=5)
     bpy.types.Scene.kimi_terminal_max_visible_messages = IntProperty(default=20, min=5, max=100)
     bpy.types.Scene.kimi_terminal_max_autonomous_turns = IntProperty(
-        name="Max Autonomous Turns", default=5, min=1, max=20,
+        name="Max Autonomous Turns", default=10, min=1, max=50,
         description="How many code→execute loops per prompt (enables long tasks)"
+    )
+    bpy.types.Scene.kimi_terminal_attached_file = StringProperty(
+        name="Attached File", default="", subtype="FILE_PATH",
+        description="Image or file to include with the next prompt"
     )
     bpy.types.Scene.kimi_terminal_use_mcp_bridge = BoolProperty(
         name="Use MCP Bridge", default=True,
@@ -937,6 +981,7 @@ def unregister():
     del bpy.types.Scene.kimi_terminal_total_turns
     del bpy.types.Scene.kimi_terminal_max_visible_messages
     del bpy.types.Scene.kimi_terminal_max_autonomous_turns
+    del bpy.types.Scene.kimi_terminal_attached_file
     del bpy.types.Scene.kimi_terminal_use_mcp_bridge
     del bpy.types.Scene.kimi_terminal_use_screenshots
     del bpy.types.Scene.kimi_terminal_expanded_thinking

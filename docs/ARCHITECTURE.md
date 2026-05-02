@@ -222,6 +222,34 @@ Need to execute code ─────────────────→ bpy.
 
 The `utils.run_in_main_thread()` function uses `bpy.app.timers` to schedule execution on the main thread.
 
+### CLI Bridge Tool Execution
+
+The CLI bridge (`cli_bridge.py`) parses tool calls from the model's response and sends them to Blender via the MCP bridge. Originally it sent Python code strings like:
+
+```python
+code = (
+    "from kimi_blender_terminal.tool_registry import execute_tool\n"
+    "import json\n"
+    f"result = execute_tool({name}, {args})\n"
+    "print(json.dumps(result))\n"
+)
+result = bridge.send("execute_code", {"code": code})
+```
+
+This failed in the sandbox because `import` statements require `__import__`, which was blocked. The fix was adding a dedicated `execute_tool` MCP handler in `mcp_bridge.py` that calls `tool_registry.execute_tool()` directly, bypassing the sandbox entirely:
+
+```python
+@_handler("execute_tool")
+def _cmd_execute_tool(params):
+    from . import tool_registry
+    name = params.get("name")
+    arguments = params.get("arguments", {})
+    result = tool_registry.execute_tool(name, arguments)
+    return {"executed": True, "status": "success", "stdout": json.dumps(result), ...}
+```
+
+The CLI bridge now sends: `bridge.send("execute_tool", {"name": name, "arguments": args})`.
+
 ---
 
 ## State Management
@@ -269,6 +297,16 @@ Code execution uses `exec(code, namespace)` with a controlled namespace. The nam
 - Safe helpers (create_cube, create_landscape, etc.)
 - Read-only bpy access
 - Color constants
+- Restricted builtins via `SAFE_BUILTINS` dict
+
+### Safe Import Wrapper
+
+The sandbox provides a custom `__import__` function (`_safe_import`) that:
+- Returns already-injected modules (`bpy`, `mathutils`, `bmesh`, `math`, `json`, `random`) without re-importing
+- Allows a whitelist of safe stdlib modules (`itertools`, `collections`, `functools`, `datetime`, `typing`, `statistics`, `fractions`, `decimal`, `string`, `copy`, `numbers`)
+- Blocks everything else (`os`, `sys`, `subprocess`, `shutil`, `socket`, etc.)
+
+**Lesson learned:** `inspect` was initially whitelisted but removed because `inspect.currentframe()` enables stack-frame walking to access the executor's unrestricted globals — a sandbox escape vector.
 
 ### Dangerous Patterns Blocked
 
@@ -279,7 +317,9 @@ DEFAULT_BLOCKED_PATTERNS = [
     r"subprocess\.call\s*\(",
     r"eval\s*\(",
     r"exec\s*\(",
+    r"importlib\.import_module",
     r"shutil\.rmtree",
+    r"shutil\.move",
     ...
 ]
 ```
@@ -289,6 +329,29 @@ DEFAULT_BLOCKED_PATTERNS = [
 All external service tokens are stored in Blender's addon preferences (user-configurable, never committed to repo).
 
 ---
+
+## Root Shim for GitHub ZIP Installs
+
+GitHub's "Download ZIP" wraps the repository in a folder like `kimi-blender-terminal-master/`. Blender looks for `__init__.py` at the root of the extracted folder. Since the real addon lives in `kimi_blender_terminal/`, a root shim bridges the gap:
+
+```python
+# repo/__init__.py
+import sys, os
+_SHIM_DIR = os.path.dirname(os.path.abspath(__file__))
+if _SHIM_DIR not in sys.path:
+    sys.path.insert(0, _SHIM_DIR)
+
+import kimi_blender_terminal as _real
+bl_info = _real.bl_info
+
+def register():
+    _real.register()
+
+def unregister():
+    _real.unregister()
+```
+
+This makes the green Code button work out of the box while preserving the existing package structure and relative imports.
 
 ## Extension Points
 

@@ -70,6 +70,16 @@
    - Some modifier types vary by Blender version
    - Check `bpy.types.Modifier.bl_rna.properties['type'].enum_items`
 
+5. **`ImportError: __import__ not found`**
+   - The assistant generated an `import` statement (e.g., `import math`, `import random`)
+   - The executor sandbox blocks unrestricted imports for security
+   - **Fix:** The sandbox now has a `_safe_import` wrapper that allows whitelisted modules (`math`, `json`, `random`, `itertools`, `collections`, etc.) and returns already-injected modules (`bpy`, `mathutils`, `bmesh`). If you see this error on a recent version, the whitelist may need expanding.
+
+6. **`NameError: name 'dir' is not defined`**
+   - The assistant tried to use `dir()`, `vars()`, `locals()`, or `globals()` for introspection
+   - These were missing from the sandbox builtins
+   - **Fix:** Added to `SAFE_BUILTINS` in `executor.py`
+
 ### "Execution wrapper failed"
 
 **Symptoms:** The exec() call itself crashed

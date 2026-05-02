@@ -47,23 +47,6 @@ Colors:
 - **Orange/Yellow** = Thinking/Working
 - **Red** = Error only
 
----
-
-## Quick Prompts
-
-When the chat is empty, one-click buttons appear:
-
-| Button | What It Does |
-|--------|-------------|
-| **Red Cube** | Creates a shiny red cube + 3-point lighting |
-| **Mountain** | Snowy mountain landscape + PBR + HDRI |
-| **Studio** | Clean white studio + soft box + camera |
-| **Island** | Tropical island + ocean + sunset |
-
-Click any button to send the prompt instantly.
-
----
-
 ## Writing Prompts
 
 ### Basic Prompts

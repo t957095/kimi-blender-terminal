@@ -347,6 +347,35 @@ def _cmd_list_tools(params):
     return {"tools": tools}
 
 
+@_handler("execute_tool")
+def _cmd_execute_tool(params):
+    """Execute a ToolRegistry tool by name with given arguments."""
+    from . import tool_registry
+    import json, traceback
+    name = params.get("name")
+    arguments = params.get("arguments", {})
+    try:
+        result = tool_registry.execute_tool(name, arguments)
+        return {
+            "executed": True,
+            "status": "success",
+            "stdout": json.dumps(result),
+            "stderr": "",
+            "message": "",
+            "traceback": "",
+        }
+    except Exception as e:
+        tb = traceback.format_exc()
+        return {
+            "executed": False,
+            "status": "error",
+            "stdout": "",
+            "stderr": tb,
+            "message": str(e),
+            "traceback": tb,
+        }
+
+
 # ── Object Manipulation ──
 
 @_handler("select_object")

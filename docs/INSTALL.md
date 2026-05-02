@@ -39,19 +39,28 @@ kimi --output-format stream-json --print --prompt "hello"
 
 ---
 
-## Method 1: Install from ZIP (Recommended)
+## Method 1: Install from GitHub Source ZIP (Green Code Button)
 
-1. Download `kimi_blender_terminal.zip` from [Releases](../../releases)
+1. Click the green **Code** button on GitHub and select **Download ZIP**
 2. Open Blender
 3. Go to **Edit → Preferences → Add-ons**
 4. Click **Install from Disk...**
-5. Select `kimi_blender_terminal.zip`
+5. Select the downloaded ZIP file
 6. Check the box to **Enable** "Kimi Blender Terminal"
 7. The MCP Bridge server auto-starts on `localhost:9742`
 
+> The repo includes a root `__init__.py` shim that makes GitHub's source ZIP install correctly in Blender.
+
 ---
 
-## Method 2: Install from Source
+## Method 2: Install from Pre-built Release ZIP
+
+1. Download `kimi_blender_terminal.zip` from [Releases](../../releases)
+2. Install in Blender as described in Method 1
+
+---
+
+## Method 3: Install from Source
 
 ```bash
 git clone https://github.com/t957095/kimi-blender-terminal.git

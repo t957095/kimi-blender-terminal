@@ -16,6 +16,8 @@ import os
 import re
 import traceback
 import bmesh
+import json
+import random
 from contextlib import redirect_stdout, redirect_stderr
 
 # Dangerous patterns blocked by default
@@ -28,11 +30,40 @@ DEFAULT_BLOCKED_PATTERNS = [
     r"subprocess\.Popen\s*\(",
     r"eval\s*\(",
     r"exec\s*\(",
-    r"__import__\s*\(",
     r"importlib\.import_module",
     r"shutil\.rmtree",
     r"shutil\.move",
 ]
+
+# Modules already injected into the execution namespace
+_SAFE_MODULES = {
+    "bpy": bpy,
+    "math": math,
+    "mathutils": mathutils,
+    "bmesh": bmesh,
+    "json": json,
+    "random": random,
+}
+
+# Additional stdlib modules that can be safely imported
+_SAFE_STDLIB = frozenset({
+    "json", "random", "math", "statistics", "fractions", "decimal",
+    "itertools", "collections", "functools", "datetime", "typing",
+    "string", "copy", "numbers",
+})
+
+
+def _safe_import(name, globals=None, locals=None, fromlist=(), level=0):
+    """Restricted import for the execution sandbox."""
+    # Return already-available modules
+    if name in _SAFE_MODULES:
+        return _SAFE_MODULES[name]
+    # Allow whitelisted stdlib modules
+    if name in _SAFE_STDLIB:
+        return __import__(name, globals, locals, fromlist, level)
+    # Block everything else
+    raise ImportError(f"Import of '{name}' is not allowed in the sandbox")
+
 
 SAFE_BUILTINS = {
     "print": print,
@@ -64,6 +95,10 @@ SAFE_BUILTINS = {
     "reversed": reversed,
     "any": any,
     "all": all,
+    "dir": dir,
+    "vars": vars,
+    "locals": locals,
+    "globals": globals,
     "chr": chr,
     "ord": ord,
     "pow": pow,
@@ -75,6 +110,7 @@ SAFE_BUILTINS = {
     "hex": hex,
     "bin": bin,
     "oct": oct,
+    "__import__": _safe_import,
     "Exception": Exception,
     "ValueError": ValueError,
     "TypeError": TypeError,
