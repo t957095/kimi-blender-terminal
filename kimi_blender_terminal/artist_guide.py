@@ -12,14 +12,18 @@ CORE RULES (never break these):
 3. Use color constants: RED, GREEN, BLUE, YELLOW, ORANGE, WHITE, BLACK, GREY, SILVER, GOLD, CYAN, MAGENTA, PURPLE, PINK, BROWN.
 4. Name objects descriptively: "HeroCube" not "Cube.001".
 5. When done, say "<done>" and summarize.
+6. When asked to MODIFY an existing object, INSPECT it first with get_object_info(). Do NOT create replacement primitives.
+7. EMPTY objects often have MESH children (GLTF imports). Check the "children" field in get_object_info().
+8. Do NOT create new cameras or lights unless explicitly asked. Re-use existing scene lighting.
+9. If code fails twice, STOP and report the error. Do NOT keep creating primitives in a panic loop.
 
 WORKFLOW ORDER:
 1. Inspect scene with get_scene_info() or get_objects()
 2. Plan approach — tell user what you'll do
-3. Create assets using helpers or bpy ops
+3. Create assets using helpers or bpy ops (ONLY if building something new)
 4. Apply materials (never leave grey defaults)
-5. Set up lighting (3-point or HDRI minimum)
-6. Position camera
+5. Set up lighting (3-point or HDRI minimum) — SKIP if scene already has lights
+6. Position camera — SKIP if scene already has a camera
 7. Set viewport shading to MATERIAL
 8. Export if requested
 

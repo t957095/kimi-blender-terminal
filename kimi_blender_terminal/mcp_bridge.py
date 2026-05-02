@@ -116,6 +116,9 @@ def _get_object_info(params):
         mins = [min(c[i] for c in world_corners) for i in range(3)]
         maxs = [max(c[i] for c in world_corners) for i in range(3)]
         info["world_bounding_box"] = [mins, maxs]
+    # CRITICAL: EMPTY objects often contain mesh children (GLTF imports)
+    if obj.type == "EMPTY" and obj.children:
+        info["children"] = [{"name": c.name, "type": c.type} for c in obj.children]
     return info
 
 

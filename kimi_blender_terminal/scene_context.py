@@ -116,6 +116,9 @@ class SceneContext:
                     "edges": len(mesh.edges),
                     "polygons": len(mesh.polygons),
                 }
+            # CRITICAL: EMPTY objects often contain mesh children (GLTF imports)
+            if obj.type == "EMPTY" and obj.children:
+                info["children"] = [c.name for c in obj.children]
         return info
 
     @classmethod

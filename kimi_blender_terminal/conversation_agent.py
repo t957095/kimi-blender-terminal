@@ -16,6 +16,8 @@ import hashlib
 import re
 import traceback
 
+import bpy
+
 from . import artist_guide
 from . import executor
 from . import kimi_client
@@ -104,12 +106,16 @@ class ConversationAgent:
         self.use_screenshots = True
         self.mcp_client = None
         self._executed_hashes = set()  # Dedup: don't run identical code twice
+        self._consecutive_errors = 0
+        self._initial_object_count = 0
 
     def reset(self):
         self.client.reset_session()
         self.status = "IDLE"
         self.last_error = None
         self._executed_hashes.clear()
+        self._consecutive_errors = 0
+        self._initial_object_count = 0
         if self.mcp_client:
             self.mcp_client.disconnect()
             self.mcp_client = None
@@ -276,6 +282,12 @@ class ConversationAgent:
             set_status("THINKING")
             log("[Agent] Sending prompt to Kimi...")
 
+            # Record initial object count for chaos detection
+            try:
+                self._initial_object_count = len(bpy.context.scene.objects)
+            except Exception:
+                self._initial_object_count = 0
+
             prompt = self._build_prompt(user_message)
             text, think, sid, err = self.client.send_message(prompt)
 
@@ -298,6 +310,7 @@ class ConversationAgent:
                 text_without_tools = _strip_tool_calls(_strip_code_blocks(text))
 
                 execution_summaries = []
+                turn_had_error = False
 
                 # === Execute tool calls first (preferred) ===
                 if tool_calls:
@@ -307,6 +320,7 @@ class ConversationAgent:
                     for i, tr in enumerate(tool_results):
                         if "error" in tr:
                             summary = f"Tool {tr['tool']}: ERROR - {tr['error']}"
+                            turn_had_error = True
                         else:
                             result = tr.get("result", {})
                             status = result.get("status", "unknown")
@@ -345,6 +359,7 @@ class ConversationAgent:
                         if result.get("scene_changes"):
                             summary_lines.append(f"Scene changes: {', '.join(result['scene_changes'])}")
                         if result.get("status") == "error":
+                            turn_had_error = True
                             err_info = _categorize_error(
                                 result.get("message", ""),
                                 result.get("traceback", "")
@@ -355,6 +370,31 @@ class ConversationAgent:
                         summary = "\n".join(summary_lines)
                         execution_summaries.append(summary)
                         log(f"[Result] {summary[:300]}")
+
+                # Circuit breaker: count consecutive errors
+                if turn_had_error:
+                    self._consecutive_errors += 1
+                    log(f"[Agent] Consecutive errors: {self._consecutive_errors}")
+                else:
+                    self._consecutive_errors = 0
+
+                # Chaos detection: too many new objects
+                try:
+                    current_obj_count = len(bpy.context.scene.objects)
+                    if current_obj_count > self._initial_object_count + 15:
+                        log(f"[Agent] CHAOS DETECTED: {current_obj_count} objects (started with {self._initial_object_count}). Stopping.")
+                        final_text = f"Stopped to prevent scene destruction. Too many objects created ({current_obj_count}). Please clear the scene or adjust your request."
+                        set_status("DONE")
+                        break
+                except Exception:
+                    pass
+
+                # Circuit breaker: 3 consecutive errors = stop
+                if self._consecutive_errors >= 3:
+                    log("[Agent] CIRCUIT BREAKER: 3 consecutive errors. Stopping.")
+                    final_text = f"Stopped after repeated errors. Last results:\n\n{'\\n'.join(execution_summaries[-2:])}"
+                    set_status("DONE")
+                    break
 
                 # If nothing to execute, we're done
                 if not tool_calls and not code_blocks:

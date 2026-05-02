@@ -18,6 +18,7 @@ import traceback
 import bmesh
 import json
 import random
+import types
 from contextlib import redirect_stdout, redirect_stderr
 
 # Dangerous patterns blocked by default
@@ -124,6 +125,13 @@ SAFE_BUILTINS = {
     "ArithmeticError": ArithmeticError,
     "StopIteration": StopIteration,
 }
+
+# Module-like builtins object for exec() — Python's IMPORT_NAME opcode
+# expects __builtins__ to be module-like or a dict. We use a ModuleType
+# wrapper to avoid "ImportError: __import__ not found" edge cases.
+_SANDBOX_BUILTINS = types.ModuleType("builtins")
+for _k, _v in SAFE_BUILTINS.items():
+    setattr(_SANDBOX_BUILTINS, _k, _v)
 
 
 def validate_code(code: str, allow_dangerous: bool = False) -> tuple:
@@ -281,6 +289,16 @@ def _create_camera(name="Camera", location=(7, -7, 5), rotation=(1.1, 0, 0.8), l
     return obj
 
 
+def _set_active_camera(name):
+    """Set the active scene camera by name."""
+    obj = _fuzzy_find(name)
+    if obj and obj.type == "CAMERA":
+        bpy.context.scene.camera = obj
+        _sync_scene()
+        return True
+    return False
+
+
 def _create_light(name="Light", type="POINT", location=(0, 0, 5), energy=1000, color=(1, 1, 1)):
     _ensure_object_mode()
     bpy.ops.object.light_add(type=type, location=location)
@@ -378,6 +396,13 @@ def _get_object_info(name: str):
             "edges": len(mesh.edges),
             "polygons": len(mesh.polygons),
         }
+    # CRITICAL: EMPTY objects often have mesh children (e.g. imported GLTF)
+    if obj.type == "EMPTY" and obj.children:
+        info["children"] = [{
+            "name": c.name,
+            "type": c.type,
+            "location": [round(c.location.x, 3), round(c.location.y, 3), round(c.location.z, 3)],
+        } for c in obj.children]
     return info
 
 
@@ -484,7 +509,7 @@ def _set_material_color(obj, color):
 # ═════════════════════════════════════════════════════════════════════════════
 
 def _shade_smooth(obj):
-    """Enable smooth shading and auto-smooth (Blender 4.x compatible)."""
+    """Enable smooth shading. Auto-smooth is removed in Blender 4.2+ (use Smooth by Angle modifier instead)."""
     if isinstance(obj, str):
         obj = _fuzzy_find(obj)
     if not obj or obj.type != "MESH":
@@ -492,8 +517,10 @@ def _shade_smooth(obj):
     _ensure_object_mode()
     bpy.context.view_layer.objects.active = obj
     bpy.ops.object.shade_smooth()
-    obj.data.use_auto_smooth = True
-    obj.data.auto_smooth_angle = math.radians(30)
+    # use_auto_smooth was removed in Blender 4.2; only set it on older versions
+    if hasattr(obj.data, "use_auto_smooth"):
+        obj.data.use_auto_smooth = True
+        obj.data.auto_smooth_angle = math.radians(30)
     _sync_scene()
 
 
@@ -730,6 +757,7 @@ BASIC:
   create_sphere(name="Sphere", location=(0,0,0), radius=1.0) -> obj
   create_cylinder(name="Cylinder", location=(0,0,0), radius=1.0, depth=2.0) -> obj
   create_camera(name="Camera", location=(7,-7,5), rotation=(1.1,0,0.8), lens=50) -> obj
+  set_active_camera(name) -> bool
   create_light(name="Light", type="POINT", location=(0,0,5), energy=1000, color=(1,1,1)) -> obj
   create_material(name="Material", color=(0.8,0.8,0.8), roughness=0.5, metallic=0.0) -> mat
   assign_material(obj_name, mat_name) -> obj
@@ -771,7 +799,7 @@ TERRAIN & LANDSCAPE:
     # Adds Clouds texture displace for micro-detail
 
   shade_smooth(obj)
-    # Enables smooth shading + 30 deg auto-smooth
+    # Enables smooth shading (auto-smooth removed in Blender 4.2+, safe on all versions)
 
   compute_vertex_normals(obj)
     # Recalculates normals after displacement edits
@@ -799,6 +827,10 @@ CRITICAL RULES:
   - NEVER use vertex paint for color. ALWAYS create a Principled BSDF material.
   - ALWAYS call set_viewport_shading("MATERIAL") after assigning materials.
   - Use color constants (RED, GREEN, etc.) instead of guessing RGB values.
+  - When modifying an EXISTING object, inspect it first with get_object_info(name). Do NOT create replacement primitives.
+  - EMPTY objects may have MESH children (common in GLTF imports). Check the "children" field.
+  - Do NOT create new cameras or lights unless the user explicitly asks. Re-use existing scene lighting.
+  - Do NOT spam primitives. If an operation fails twice, STOP and report the error instead of creating more objects.
 
 You also have direct access to: bpy, context, scene, data, ops, mathutils, bmesh, math
 """
@@ -812,7 +844,7 @@ def execute_blender_python(code: str, allow_dangerous: bool = False) -> dict:
         return {"status": "error", "message": reason}
 
     namespace = {
-        "__builtins__": SAFE_BUILTINS,
+        "__builtins__": _SANDBOX_BUILTINS,
         "bpy": bpy,
         "context": bpy.context,
         "scene": bpy.context.scene,
@@ -830,6 +862,7 @@ def execute_blender_python(code: str, allow_dangerous: bool = False) -> dict:
         "create_sphere": _create_sphere,
         "create_cylinder": _create_cylinder,
         "create_camera": _create_camera,
+        "set_active_camera": _set_active_camera,
         "create_light": _create_light,
         "create_material": _create_material,
         "assign_material": _assign_material,

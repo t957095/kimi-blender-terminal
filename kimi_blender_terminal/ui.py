@@ -385,6 +385,47 @@ class KIMI_TERMINAL_OT_CopyCode(Operator):
         return {"FINISHED"}
 
 
+class KIMI_TERMINAL_OT_CopyMessage(Operator):
+    bl_idname = "kimi_terminal.copy_message"
+    bl_label = "Copy Message"
+    bl_description = "Copy this message text to clipboard"
+    bl_options = {"REGISTER"}
+
+    text: StringProperty()
+
+    def execute(self, context):
+        context.window_manager.clipboard = self.text
+        self.report({"INFO"}, "Message copied to clipboard")
+        return {"FINISHED"}
+
+
+class KIMI_TERMINAL_OT_CopyAll(Operator):
+    bl_idname = "kimi_terminal.copy_all"
+    bl_label = "Copy All"
+    bl_description = "Copy entire chat history to clipboard"
+    bl_options = {"REGISTER"}
+
+    def execute(self, context):
+        lines = []
+        for msg in context.scene.kimi_terminal_history:
+            if msg.role == "user":
+                lines.append(f"[USER] {msg.content}")
+            elif msg.role == "assistant":
+                lines.append(f"[KIMI] {msg.content}")
+                if msg.thinking:
+                    lines.append(f"[THINKING] {msg.thinking}")
+                if msg.code:
+                    lines.append(f"[CODE]\n{msg.code}")
+                if msg.output:
+                    lines.append(f"[OUTPUT] {msg.output}")
+            elif msg.role == "system":
+                lines.append(f"[SYSTEM] {msg.content}")
+        text = "\n\n".join(lines)
+        context.window_manager.clipboard = text
+        self.report({"INFO"}, f"Copied {len(lines)} messages to clipboard")
+        return {"FINISHED"}
+
+
 class KIMI_TERMINAL_OT_RunCode(Operator):
     bl_idname = "kimi_terminal.run_code"
     bl_label = "Run"
@@ -647,6 +688,9 @@ class KIMI_TERMINAL_PT_Panel(Panel):
                 if msg.timestamp:
                     row.alignment = "RIGHT"
                     row.label(text=msg.timestamp)
+                # Copy message button
+                copy_op = row.operator("kimi_terminal.copy_message", text="", icon="COPYDOWN", emboss=False)
+                copy_op.text = msg.content or ""
 
                 # Text content
                 if msg.content:
@@ -763,6 +807,7 @@ class KIMI_TERMINAL_PT_Panel(Panel):
         row.scale_y = 0.75
         row.alignment = "CENTER"
         row.operator("kimi_terminal.clear", text="Clear", icon="TRASH", emboss=False)
+        row.operator("kimi_terminal.copy_all", text="Copy All", icon="COPYDOWN", emboss=False)
         row.prop(scene, "kimi_terminal_show_thinking",
                  text="Think", icon="INFO", emboss=False, toggle=True)
         row.prop(scene, "kimi_terminal_show_code",
@@ -893,6 +938,8 @@ classes = [
     KIMI_TERMINAL_OT_Clear,
     KIMI_TERMINAL_OT_RefreshScene,
     KIMI_TERMINAL_OT_CopyCode,
+    KIMI_TERMINAL_OT_CopyMessage,
+    KIMI_TERMINAL_OT_CopyAll,
     KIMI_TERMINAL_OT_RunCode,
     KIMI_TERMINAL_OT_ToggleThinking,
     KIMI_TERMINAL_OT_NewSession,
